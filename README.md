@@ -155,3 +155,11 @@ You must understand every line you submit. We check this with your video and in 
 5. Paste the repository link and the video link in the application form.
 
 We will run `pnpm install && pnpm check && pnpm typecheck && pnpm test` on your repository.
+
+## Decisions
+
+1. **Paying is one conditional `UPDATE`.** `UPDATE shares SET paid_at = ?, idempotency_key = ? WHERE id = ? AND bill_id = ? AND paid_at IS NULL RETURNING ...`. D1 runs one write at a time, so when two requests pay the same share at once, only one gets the row back. The loser reads the share: same key → `200` with the stored result, other key → `409`, no row → `404`. The key is stored on the share itself, so there is no separate idempotency table to keep in sync, and the `shares_paid_with_key` check makes "paid without a key" impossible. Trade-off: a key is scoped to one share, and a replay returns the share as stored, not a cached copy of the first HTTP response.
+2. **Member order is an explicit `position` column.** It is computed inside the same `INSERT ... SELECT` that checks the home exists, and `UNIQUE (home_id, position)` backs it up. A timestamp can tie when two members are added in the same millisecond, and SQLite may renumber `rowid` on `VACUUM`, so neither is a safe order for "who gets the extra cents".
+3. **A bill and its shares are saved in one `DB.batch()`, and money is integer cents everywhere.** The batch is a transaction, so a bill never exists without its shares. The split is `floor(total / n)` plus one cent for the first `total % n` members, so the shares always add up to the total. The database repeats the money rules (`CHECK` on integer type and sign), and input is validated by hand (`Number.isSafeInteger`) instead of with a schema library, since there are only three fields.
+
+The web page uses TanStack Router loaders for the loading and error states and reloads with `router.invalidate()` after each change. It does not update optimistically, so a failed payment leaves the share unpaid. The page keeps a share's `Idempotency-Key` across retries, so retrying a payment that timed out but went through is not a double payment. For the page I added two read endpoints that the spec does not list: `GET /api/homes/:homeId` and `GET /api/homes/:homeId/bills`.
