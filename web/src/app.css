@@ -1,0 +1,126 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  color: #1f2933;
+  background: #f4f6f8;
+}
+
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+h1 {
+  font-size: 28px;
+  margin: 8px 0 16px;
+}
+
+h2 {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+
+h3 {
+  font-size: 16px;
+  margin: 0 0 8px;
+  display: flex;
+  justify-content: space-between;
+}
+
+section {
+  background: #fff;
+  border: 1px solid #d9dee3;
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+a {
+  color: #1d5fa8;
+}
+
+.list {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+input {
+  padding: 6px 8px;
+  border: 1px solid #aab4be;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+button {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 4px;
+  background: #1d5fa8;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #8aa5c4;
+  cursor: not-allowed;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+td {
+  padding: 6px 0;
+  border-bottom: 1px solid #eef0f2;
+}
+
+.money {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.empty {
+  color: #52606d;
+}
+
+.error {
+  color: #a61b1b;
+}
+
+.bill {
+  border-top: 1px solid #eef0f2;
+  padding: 12px 0;
+}
+
+.shares {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shares li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.shares li > span:first-child {
+  flex: 1;
+}
+
+.paid {
+  color: #1f7a3d;
+  min-width: 140px;
+}
