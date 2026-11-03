@@ -155,3 +155,13 @@ You must understand every line you submit. We check this with your video and in 
 5. Paste the repository link and the video link in the application form.
 
 We will run `pnpm install && pnpm check && pnpm typecheck && pnpm test` on your repository.
+
+## Decisions
+
+1. **Integer cents, extra cents go to the first members.** I split with `remainder = total % n` and `base = (total - remainder) / n`, so there is no rounding and the shares always add up to the total. The first `remainder` members get one extra cent. Member order comes from an `AUTOINCREMENT` `seq` column, not from the UUIDs or timestamps.
+
+2. **Paying is one conditional `UPDATE`.** The pay route runs `UPDATE shares ... WHERE id = ? AND bill_id = ? AND paid_at IS NULL RETURNING ...`. Only one request can match `paid_at IS NULL`, so two payments at the same time cannot both win. If nothing was updated I read the share: same key returns `200` with the saved result, a different key returns `409`, no row returns `404`. A read-then-write version let two requests pay the same share in my tests.
+
+3. **The database enforces the rules too.** A bill and its shares are inserted in one `db.batch()`, which D1 runs as a transaction, so there is never a bill without its shares. The schema has named constraints such as `bills_total_positive_integer`, `shares_bill_member_unique`, `shares_payment_complete` and composite foreign keys on `(id, home_id)` so a share can't mix a bill and a member from different homes.
+
+For the web page I added two read endpoints: `GET /api/homes` and `GET /api/homes/:homeId/bills`.
