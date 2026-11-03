@@ -1,46 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-export type LoadState<T> =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; data: T }
+export type Progress<Result> =
+  | { phase: 'loading' }
+  | { phase: 'failed'; reason: string }
+  | { phase: 'ready'; payload: Result }
 
 /*
-  Runs `load` when the page opens and again every time `reload` is called.
-  `load` must be wrapped in useCallback, because a new function means a new load.
-  While a reload runs, the old data stays on the screen, so the page does not
-  blink back to a loading message after every payment.
+  Runs `producer` when the page opens and again every time `reloadAll` is called.
+  `producer` must be wrapped in useCallback, because a new function means a
+  new fetch.
+  While the data is fetched again, the old data stays on the screen, so the
+  page does not blink back to a loading message after every payment.
 */
-export function useLoad<T>(load: (signal: AbortSignal) => Promise<T>) {
-  const [state, setState] = useState<LoadState<T>>({ status: 'loading' })
-  const current = useRef<AbortController | null>(null)
+export function useAsync<Result>(producer: (stop: AbortSignal) => Promise<Result>) {
+  const [progress, setProgress] = useState<Progress<Result>>({ phase: 'loading' })
+  const running = useRef<AbortController | null>(null)
 
-  const reload = useCallback(() => {
-    current.current?.abort()
-    const controller = new AbortController()
-    current.current = controller
+  const reloadAll = useCallback(() => {
+    running.current?.abort()
+    const ctl = new AbortController()
+    running.current = ctl
 
-    load(controller.signal)
-      .then((data) => setState({ status: 'ready', data }))
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) {
+    producer(ctl.signal)
+      .then((payload) => setProgress({ phase: 'ready', payload }))
+      .catch((problem: unknown) => {
+        if (ctl.signal.aborted) {
           return
         }
-        const message = error instanceof Error ? error.message : 'Something went wrong.'
-        setState({ status: 'error', message })
+        const reason = problem instanceof Error ? problem.message : 'Something went wrong.'
+        setProgress({ phase: 'failed', reason })
       })
-  }, [load])
+  }, [producer])
 
-  const retry = useCallback(() => {
-    setState({ status: 'loading' })
-    reload()
-  }, [reload])
+  const startOver = useCallback(() => {
+    setProgress({ phase: 'loading' })
+    reloadAll()
+  }, [reloadAll])
 
   useEffect(() => {
-    setState({ status: 'loading' })
-    reload()
-    return () => current.current?.abort()
-  }, [reload])
+    setProgress({ phase: 'loading' })
+    reloadAll()
+    return () => running.current?.abort()
+  }, [reloadAll])
 
-  return { state, reload, retry }
+  return { progress, reloadAll, startOver }
 }

@@ -1,57 +1,57 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { type FormEvent, useState } from 'react'
-import { createHome, listHomes } from '../api'
-import { useLoad } from '../useLoad'
+import { loadHomes, postHome } from '../server'
+import { useAsync } from '../useAsync'
 
 export const Route = createFileRoute('/')({
-  component: HomesPage,
+  component: HomeListScreen,
 })
 
-function HomesPage() {
-  const navigate = useNavigate()
-  const { state, retry } = useLoad(listHomes)
-  const [name, setName] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [formError, setFormError] = useState<string | null>(null)
+function HomeListScreen() {
+  const goTo = useNavigate()
+  const { progress, startOver } = useAsync(loadHomes)
+  const [typedName, setTypedName] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [formProblem, setFormProblem] = useState<string | null>(null)
 
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault()
-    setSaving(true)
-    setFormError(null)
+  async function handleSubmit(submitted: FormEvent) {
+    submitted.preventDefault()
+    setIsSaving(true)
+    setFormProblem(null)
 
     try {
-      const home = await createHome(name)
-      await navigate({ to: '/homes/$homeId', params: { homeId: home.id } })
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Could not create the home.')
-      setSaving(false)
+      const made = await postHome(typedName)
+      await goTo({ to: '/home/$homeId', params: { homeId: made.id } })
+    } catch (problem) {
+      setFormProblem(problem instanceof Error ? problem.message : 'Could not create the home.')
+      setIsSaving(false)
     }
   }
 
   return (
-    <main className="page">
+    <main className="wrap">
       <h1>Bill splitter</h1>
 
       <section>
         <h2>Your homes</h2>
-        {state.status === 'loading' && <p>Loading homes...</p>}
-        {state.status === 'error' && (
-          <div role="alert" className="error">
-            <p>{state.message}</p>
-            <button type="button" onClick={retry}>
+        {progress.phase === 'loading' && <p>Loading homes...</p>}
+        {progress.phase === 'failed' && (
+          <div role="alert" className="problem">
+            <p>{progress.reason}</p>
+            <button type="button" onClick={startOver}>
               Try again
             </button>
           </div>
         )}
-        {state.status === 'ready' && state.data.length === 0 && (
-          <p className="empty">There are no homes yet. Add the first one below.</p>
+        {progress.phase === 'ready' && progress.payload.length === 0 && (
+          <p className="hint">There are no homes yet. Add the first one below.</p>
         )}
-        {state.status === 'ready' && state.data.length > 0 && (
-          <ul className="list">
-            {state.data.map((home) => (
-              <li key={home.id}>
-                <Link to="/homes/$homeId" params={{ homeId: home.id }}>
-                  {home.name}
+        {progress.phase === 'ready' && progress.payload.length > 0 && (
+          <ul className="plain-list">
+            {progress.payload.map((entry) => (
+              <li key={entry.id}>
+                <Link to="/home/$homeId" params={{ homeId: entry.id }}>
+                  {entry.name}
                 </Link>
               </li>
             ))}
@@ -61,22 +61,22 @@ function HomesPage() {
 
       <section>
         <h2>Add a home</h2>
-        <form onSubmit={onSubmit} className="row">
+        <form onSubmit={handleSubmit} className="inline-form">
           <label htmlFor="home-name">Name</label>
           <input
             id="home-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
+            value={typedName}
+            onChange={(changed) => setTypedName(changed.target.value)}
             maxLength={100}
             required
           />
-          <button type="submit" disabled={saving}>
-            {saving ? 'Adding...' : 'Add home'}
+          <button type="submit" disabled={isSaving}>
+            {isSaving ? 'Adding...' : 'Add home'}
           </button>
         </form>
-        {formError && (
-          <p role="alert" className="error">
-            {formError}
+        {formProblem && (
+          <p role="alert" className="problem">
+            {formProblem}
           </p>
         )}
       </section>

@@ -1,58 +1,58 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { type FormEvent, useCallback, useRef, useState } from 'react'
+import { showMoney, typedToCents } from '../cents'
 import {
-  addMember,
-  type Balance,
-  type Bill,
-  createBill,
-  getHome,
-  type HomeDetails,
-  listBalances,
-  listBills,
-  payShare,
-} from '../api'
-import { formatCents, parseToCents } from '../money'
-import { useLoad } from '../useLoad'
+  type BillData,
+  type HomeFull,
+  loadBills,
+  loadHome,
+  loadOwed,
+  type Owed,
+  postMember,
+  postPayment,
+  submitBill,
+} from '../server'
+import { useAsync } from '../useAsync'
 
-export const Route = createFileRoute('/homes/$homeId')({
-  component: HomePage,
+export const Route = createFileRoute('/home/$homeId')({
+  component: HomeScreen,
 })
 
-type PageData = { home: HomeDetails; bills: Bill[]; balances: Balance[] }
+type Everything = { homeData: HomeFull; billList: BillData[]; owedList: Owed[] }
 
-function HomePage() {
+function HomeScreen() {
   const { homeId } = Route.useParams()
 
-  const load = useCallback(
-    async (signal: AbortSignal): Promise<PageData> => {
-      const [home, bills, balances] = await Promise.all([
-        getHome(homeId, signal),
-        listBills(homeId, signal),
-        listBalances(homeId, signal),
+  const fetchEverything = useCallback(
+    async (stop: AbortSignal): Promise<Everything> => {
+      const [homeData, billList, owedList] = await Promise.all([
+        loadHome(homeId, stop),
+        loadBills(homeId, stop),
+        loadOwed(homeId, stop),
       ])
-      return { home, bills, balances }
+      return { homeData, billList, owedList }
     },
     [homeId],
   )
-  const { state, reload, retry } = useLoad(load)
+  const { progress, reloadAll, startOver } = useAsync(fetchEverything)
 
-  if (state.status === 'loading') {
+  if (progress.phase === 'loading') {
     return (
-      <main className="page">
+      <main className="wrap">
         <p>Loading the home...</p>
       </main>
     )
   }
 
-  if (state.status === 'error') {
+  if (progress.phase === 'failed') {
     return (
-      <main className="page">
+      <main className="wrap">
         <p>
           <Link to="/">Back to all homes</Link>
         </p>
-        <div role="alert" className="error">
-          <p>{state.message}</p>
-          <button type="button" onClick={retry}>
+        <div role="alert" className="problem">
+          <p>{progress.reason}</p>
+          <button type="button" onClick={startOver}>
             Try again
           </button>
         </div>
@@ -60,80 +60,84 @@ function HomePage() {
     )
   }
 
-  const { home, bills, balances } = state.data
+  const { homeData, billList, owedList } = progress.payload
 
   return (
-    <main className="page">
+    <main className="wrap">
       <p>
         <Link to="/">Back to all homes</Link>
       </p>
-      <h1>{home.name}</h1>
+      <h1>{homeData.name}</h1>
 
-      <MembersSection home={home} onChange={reload} />
-      <BalancesSection balances={balances} />
-      <NewBillSection homeId={home.id} hasMembers={home.members.length > 0} onChange={reload} />
-      <BillsSection home={home} bills={bills} onChange={reload} />
+      <PeopleBlock homeData={homeData} afterChange={reloadAll} />
+      <OwedBlock owedList={owedList} />
+      <NewBillBlock
+        homeId={homeData.id}
+        somebodyLivesHere={homeData.members.length > 0}
+        afterChange={reloadAll}
+      />
+      <BillsBlock homeData={homeData} billList={billList} afterChange={reloadAll} />
     </main>
   )
 }
 
-function MembersSection(props: { home: HomeDetails; onChange: () => void }) {
-  const [name, setName] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+function PeopleBlock(inputs: { homeData: HomeFull; afterChange: () => void }) {
+  const [typedName, setTypedName] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [formProblem, setFormProblem] = useState<string | null>(null)
 
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault()
-    setSaving(true)
-    setError(null)
+  async function handleSubmit(submitted: FormEvent) {
+    submitted.preventDefault()
+    setIsSaving(true)
+    setFormProblem(null)
 
     try {
-      await addMember(props.home.id, name)
-      setName('')
-      props.onChange()
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not add the member.')
+      await postMember(inputs.homeData.id, typedName)
+      setTypedName('')
+      inputs.afterChange()
+    } catch (problem) {
+      setFormProblem(problem instanceof Error ? problem.message : 'Could not add the member.')
     } finally {
-      setSaving(false)
+      setIsSaving(false)
     }
   }
 
   return (
     <section>
       <h2>Members</h2>
-      {props.home.members.length === 0 ? (
-        <p className="empty">Nobody lives here yet. Add a member before adding a bill.</p>
+      {inputs.homeData.members.length === 0 ? (
+        <p className="hint">Nobody lives here yet. Add a member before adding a bill.</p>
       ) : (
-        <ol className="list">
-          {props.home.members.map((member) => (
-            <li key={member.id}>{member.name}</li>
+        <ol className="plain-list">
+          {inputs.homeData.members.map((person) => (
+            <li key={person.id}>{person.name}</li>
           ))}
         </ol>
       )}
-      <form onSubmit={onSubmit} className="row">
+      <form onSubmit={handleSubmit} className="inline-form">
         <label htmlFor="member-name">Name</label>
         <input
           id="member-name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
+          value={typedName}
+          onChange={(changed) => setTypedName(changed.target.value)}
           maxLength={100}
           required
         />
-        <button type="submit" disabled={saving}>
-          {saving ? 'Adding...' : 'Add member'}
+        <button type="submit" disabled={isSaving}>
+          {isSaving ? 'Adding...' : 'Add member'}
         </button>
       </form>
-      {error && (
-        <p role="alert" className="error">
-          {error}
+      {formProblem && (
+        <p role="alert" className="problem">
+          {formProblem}
         </p>
       )}
     </section>
   )
 }
 
-function BalancesSection(props: { balances: Balance[] }) {
-  if (props.balances.length === 0) {
+function OwedBlock(inputs: { owedList: Owed[] }) {
+  if (inputs.owedList.length === 0) {
     return null
   }
 
@@ -142,10 +146,10 @@ function BalancesSection(props: { balances: Balance[] }) {
       <h2>Still to pay</h2>
       <table>
         <tbody>
-          {props.balances.map((balance) => (
-            <tr key={balance.memberId}>
-              <td>{balance.name}</td>
-              <td className="money">{formatCents(balance.outstandingCents)}</td>
+          {inputs.owedList.map((entry) => (
+            <tr key={entry.memberId}>
+              <td>{entry.name}</td>
+              <td className="amt">{showMoney(entry.outstandingCents)}</td>
             </tr>
           ))}
         </tbody>
@@ -154,72 +158,76 @@ function BalancesSection(props: { balances: Balance[] }) {
   )
 }
 
-function NewBillSection(props: { homeId: string; hasMembers: boolean; onChange: () => void }) {
-  const [title, setTitle] = useState('')
-  const [amount, setAmount] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+function NewBillBlock(inputs: {
+  homeId: string
+  somebodyLivesHere: boolean
+  afterChange: () => void
+}) {
+  const [typedTitle, setTypedTitle] = useState('')
+  const [typedAmount, setTypedAmount] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [formProblem, setFormProblem] = useState<string | null>(null)
 
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault()
-    setError(null)
+  async function handleSubmit(submitted: FormEvent) {
+    submitted.preventDefault()
+    setFormProblem(null)
 
-    const totalCents = parseToCents(amount)
-    if (totalCents === null) {
-      setError('Write the amount in dollars, like 25 or 25.50. It must be more than 0.')
+    const parsedCents = typedToCents(typedAmount)
+    if (parsedCents === null) {
+      setFormProblem('Write the amount in dollars, like 25 or 25.50. It must be more than 0.')
       return
     }
 
-    setSaving(true)
+    setIsSaving(true)
     try {
-      await createBill(props.homeId, title, totalCents)
-      setTitle('')
-      setAmount('')
-      props.onChange()
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not add the bill.')
+      await submitBill(inputs.homeId, typedTitle, parsedCents)
+      setTypedTitle('')
+      setTypedAmount('')
+      inputs.afterChange()
+    } catch (problem) {
+      setFormProblem(problem instanceof Error ? problem.message : 'Could not add the bill.')
     } finally {
-      setSaving(false)
+      setIsSaving(false)
     }
   }
 
   return (
     <section>
       <h2>Add a bill</h2>
-      <form onSubmit={onSubmit} className="row">
+      <form onSubmit={handleSubmit} className="inline-form">
         <label htmlFor="bill-title">Title</label>
         <input
           id="bill-title"
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
+          value={typedTitle}
+          onChange={(changed) => setTypedTitle(changed.target.value)}
           maxLength={100}
           required
         />
         <label htmlFor="bill-amount">Amount ($)</label>
         <input
           id="bill-amount"
-          value={amount}
-          onChange={(event) => setAmount(event.target.value)}
+          value={typedAmount}
+          onChange={(changed) => setTypedAmount(changed.target.value)}
           inputMode="decimal"
           required
         />
-        <button type="submit" disabled={saving || !props.hasMembers}>
-          {saving ? 'Adding...' : 'Add bill'}
+        <button type="submit" disabled={isSaving || !inputs.somebodyLivesHere}>
+          {isSaving ? 'Adding...' : 'Add bill'}
         </button>
       </form>
-      {!props.hasMembers && <p className="empty">Add at least one member first.</p>}
-      {error && (
-        <p role="alert" className="error">
-          {error}
+      {!inputs.somebodyLivesHere && <p className="hint">Add at least one member first.</p>}
+      {formProblem && (
+        <p role="alert" className="problem">
+          {formProblem}
         </p>
       )}
     </section>
   )
 }
 
-function BillsSection(props: { home: HomeDetails; bills: Bill[]; onChange: () => void }) {
-  const [paying, setPaying] = useState<Set<string>>(new Set())
-  const [errors, setErrors] = useState<Record<string, string>>({})
+function BillsBlock(inputs: { homeData: HomeFull; billList: BillData[]; afterChange: () => void }) {
+  const [busyShares, setBusyShares] = useState<Set<string>>(new Set())
+  const [shareProblems, setShareProblems] = useState<Record<string, string>>({})
 
   /*
     One Idempotency-Key for each share. It is made on the first click and kept
@@ -227,32 +235,32 @@ function BillsSection(props: { home: HomeDetails; bills: Bill[]; onChange: () =>
     the same key, so the server knows it is the same payment and does not
     take the money twice.
   */
-  const keys = useRef(new Map<string, string>())
+  const payKeys = useRef(new Map<string, string>())
 
-  const memberNames = new Map(props.home.members.map((member) => [member.id, member.name]))
+  const nameById = new Map(inputs.homeData.members.map((person) => [person.id, person.name]))
 
-  async function onPay(billId: string, shareId: string) {
-    let key = keys.current.get(shareId)
-    if (!key) {
-      key = crypto.randomUUID()
-      keys.current.set(shareId, key)
+  async function handlePay(billId: string, shareId: string) {
+    let idemKey = payKeys.current.get(shareId)
+    if (!idemKey) {
+      idemKey = crypto.randomUUID()
+      payKeys.current.set(shareId, idemKey)
     }
 
-    setPaying((before) => new Set(before).add(shareId))
-    setErrors((before) => ({ ...before, [shareId]: '' }))
+    setBusyShares((earlier) => new Set(earlier).add(shareId))
+    setShareProblems((earlier) => ({ ...earlier, [shareId]: '' }))
 
     try {
-      await payShare(billId, shareId, key)
-      keys.current.delete(shareId)
-      props.onChange()
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'The payment did not work.'
-      setErrors((before) => ({ ...before, [shareId]: message }))
+      await postPayment(billId, shareId, idemKey)
+      payKeys.current.delete(shareId)
+      inputs.afterChange()
+    } catch (problem) {
+      const sentence = problem instanceof Error ? problem.message : 'The payment did not work.'
+      setShareProblems((earlier) => ({ ...earlier, [shareId]: sentence }))
     } finally {
-      setPaying((before) => {
-        const after = new Set(before)
-        after.delete(shareId)
-        return after
+      setBusyShares((earlier) => {
+        const later = new Set(earlier)
+        later.delete(shareId)
+        return later
       })
     }
   }
@@ -260,33 +268,33 @@ function BillsSection(props: { home: HomeDetails; bills: Bill[]; onChange: () =>
   return (
     <section>
       <h2>Bills</h2>
-      {props.bills.length === 0 && <p className="empty">There are no bills yet.</p>}
-      {props.bills.map((bill) => (
-        <article key={bill.id} className="bill">
+      {inputs.billList.length === 0 && <p className="hint">There are no bills yet.</p>}
+      {inputs.billList.map((oneBill) => (
+        <article key={oneBill.id} className="bill-card">
           <h3>
-            {bill.title} <span className="money">{formatCents(bill.totalCents)}</span>
+            {oneBill.title} <span className="amt">{showMoney(oneBill.totalCents)}</span>
           </h3>
-          <ul className="shares">
-            {bill.shares.map((share) => (
-              <li key={share.id}>
-                <span>{memberNames.get(share.memberId) ?? 'Unknown member'}</span>
-                <span className="money">{formatCents(share.amountCents)}</span>
-                {share.paidAt ? (
-                  <span className="paid">
-                    Paid on {new Date(share.paidAt).toLocaleDateString()}
+          <ul className="share-lines">
+            {oneBill.shares.map((line) => (
+              <li key={line.id}>
+                <span>{nameById.get(line.memberId) ?? 'Unknown member'}</span>
+                <span className="amt">{showMoney(line.amountCents)}</span>
+                {line.paidAt ? (
+                  <span className="settled">
+                    Paid on {new Date(line.paidAt).toLocaleDateString()}
                   </span>
                 ) : (
                   <button
                     type="button"
-                    onClick={() => onPay(bill.id, share.id)}
-                    disabled={paying.has(share.id)}
+                    onClick={() => handlePay(oneBill.id, line.id)}
+                    disabled={busyShares.has(line.id)}
                   >
-                    {paying.has(share.id) ? 'Paying...' : 'Pay'}
+                    {busyShares.has(line.id) ? 'Paying...' : 'Pay'}
                   </button>
                 )}
-                {errors[share.id] && (
-                  <span role="alert" className="error">
-                    {errors[share.id]} The share is still unpaid.
+                {shareProblems[line.id] && (
+                  <span role="alert" className="problem">
+                    {shareProblems[line.id]} The share is still unpaid.
                   </span>
                 )}
               </li>
