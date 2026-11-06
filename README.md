@@ -31,6 +31,8 @@ Stack: Hono on Cloudflare Workers, Cloudflare D1 (SQLite), React, Vite, TanStack
 
 I built the database, the API and the web page, and wrote the README sections below. All 24 visible tests pass, and I did not change them. I added 19 tests of my own. `pnpm check`, `pnpm typecheck`, `pnpm test` and `pnpm build` all pass.
 
+For a slow, step-by-step explanation written for a beginner (words, every file, how to show it, the video and the submission), read [docs/GUIDE.md](docs/GUIDE.md).
+
 ## Run it
 
 ```bash

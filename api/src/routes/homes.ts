@@ -91,7 +91,7 @@ homeRoutes.post('/:homeId/bills', async (ctx) => {
 
   /*
     All the statements in batch() run as one transaction. If saving one share
-    fails, the bill is not responseBill either.
+    fails, the bill is not saved either.
   */
   await database.batch([
     database
